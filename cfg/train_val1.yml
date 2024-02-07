@@ -1,9 +1,10 @@
 phase: train
 dataset:
+  split: ex_data/train.txt
   scale: 1
   img_size: [480, 640]
   img_trans: center_crop  # chocies ['center_crop',' random_crop', 'resize', 'none']
-  data_path: data/markerless
-  kpt_path: data/marker_shift
-  val_split: 0.2
+  data_path: ex_data/markerless
+  kpt_path: ex_data/marker_shift
+  val_split: 0.1765
   seed: 0

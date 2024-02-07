@@ -13,10 +13,10 @@ def options():
 def vec_mindis(p0:np.ndarray, p1:np.ndarray):
     N = p0.shape[0]
     M = p1.shape[0]
-    p0 = np.repeat(p0[None,:,:],N,axis=0)
-    p1 = np.repeat(p1[:,None,:],M,axis=1)
-    dis = np.sum((p0 - p1)**2, axis=-1)  # (N, N)
-    index = np.argmin(dis, axis=0)  # p1 <-> p0[index]
+    p0 = np.repeat(p0[None,:,:],M,axis=0)  # M, N, 2
+    p1 = np.repeat(p1[:,None,:],N,axis=1)  # M, N, 2
+    dis = np.sum((p0 - p1)**2, axis=-1)  # (M, N)
+    index = np.argmin(dis, axis=0)  # p0 <-> p1[index]
     return index
 
 

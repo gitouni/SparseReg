@@ -1,5 +1,5 @@
 import numpy as np
-from utils import find_marker_centers, plot_marker_delta, plot_marker_center
+from utils import find_marker_centers, plot_marker_delta, plot_marker_center, plot_marker_displacement
 import cv2
 import argparse
 
@@ -13,10 +13,10 @@ def options():
 
 if __name__ == "__main__":
     args = options()
-    ref_marker = cv2.imread("data/ref_marker.png")
-    img1 = cv2.imread("data/ref_markered.png")
-    img2 = cv2.imread("data/markered/0008.png")
-    img3 = cv2.imread("data/markerless/0008.png")
+    ref_marker = cv2.imread("ex_data/ref_marker.png")
+    img1 = cv2.imread("ex_data/ref_markered.png")
+    img2 = cv2.imread("ex_data/markered/0105.png")
+    img3 = cv2.imread("ex_data/markerless/0105.png")
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
     p0 = np.array(find_marker_centers(ref_marker),dtype=np.float32)
@@ -25,8 +25,8 @@ if __name__ == "__main__":
     kpt0 = p0[st == 1]
     kpt1 = p1[st == 1]
     out_ref = plot_marker_center(img1, p0)
-    out1 = plot_marker_delta(img2, kpt1, kpt1 - kpt0)
-    out2 = plot_marker_delta(img3, kpt1, kpt1 - kpt0)
+    out1 = plot_marker_displacement(img2, kpt0, kpt1)
+    out2 = plot_marker_displacement(img3, kpt0, kpt1)
     # Display the blended image
     cv2.imwrite('debug/marker_centers.png', out_ref)
     cv2.imwrite('debug/tracked_markered.png', out1)

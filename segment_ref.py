@@ -8,8 +8,8 @@ from tqdm import tqdm
 def options():
     parser = argparse.ArgumentParser()
     io_parser = parser.add_argument_group()
-    io_parser.add_argument("--input_dir",type=str,default="ex_data/markered")
-    io_parser.add_argument("--output_dir",type=str,default="ex_data/marker")
+    io_parser.add_argument("--input_file",type=str,default="ex_data/ref_marker.png")
+    io_parser.add_argument("--output_file",type=str,default="ex_data/ref_marker.png")
     marker_parser = parser.add_argument_group()
     marker_parser.add_argument("--morphop_size",type=int,default=5)
     marker_parser.add_argument("--morphop_iter",type=int,default=1)
@@ -23,7 +23,6 @@ def options():
 
 if __name__ == "__main__":
     args = options()
-    os.makedirs(args.output_dir, exist_ok=True)
     calib_find_marker = partial(find_marker,
         morphop_kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (args.morphop_size, args.morphop_size)),
         morphclose_kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (args.morphclose_size, args.morphclose_size)),
@@ -34,8 +33,6 @@ if __name__ == "__main__":
         morphclose_iter=args.morphclose_iter,
         dilate_iter=args.dilate_iter
     )
-    img_list = list(sorted(os.listdir(args.input_dir)))
-    for img_name in tqdm(img_list):
-        img = cv2.imread(os.path.join(args.input_dir, img_name))
-        marker_mask = calib_find_marker(img)
-        cv2.imwrite(os.path.join(args.output_dir, os.path.splitext(img_name)[0]+".png"),marker_mask)
+    img = cv2.imread(args.input_file)
+    marker_mask = calib_find_marker(img)
+    cv2.imwrite(args.output_file, marker_mask)

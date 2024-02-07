@@ -108,15 +108,20 @@ def finds_kpts_indir(dirname:str):
 class ImageKptDataset(Dataset):
     def __init__(self, data_path:str, kpt_path:str,
                   img_loader:Callable, kpt_loader:Callable,
-                  img_transform:Callable, kpt_transform:float):
+                  img_transform:Callable, kpt_transform:float, split:Union[str, None]):
         self.imgs = find_imgs_indir(data_path)
         self.kpts = finds_kpts_indir(kpt_path)
         self.img_loader = img_loader
         self.kpt_loader = kpt_loader
         self.img_transform = img_transform
         self.kpt_transform = kpt_transform
+        if split is None:
+            self.split = np.arange(len(self.imgs))
+        else:
+            self.split = np.loadtxt(split, dtype=np.int32)
 
-    def __getitem__(self, index) -> Tuple[Tensor, Tensor]:
+    def __getitem__(self, index_) -> Tuple[Tensor, Tensor]:
+        index = self.split[index_]
         img:Image = self.img_loader(self.imgs[index])
         kpts, kpt_shift = self.kpt_loader(self.kpts[index])
         mask = torch.zeros((1, img.height, img.width), dtype=torch.float32)
@@ -126,7 +131,7 @@ class ImageKptDataset(Dataset):
         return self.img_transform(img), mask, self.kpt_transform(mask_shift)
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.split)
 
 def subset_split(dataset, lengths, generator):
     """
@@ -155,8 +160,12 @@ def make_dataset(opt:dict):
     mask_loader = kpt_loader
     if isinstance(dataset_args['data_path'], str):
         assert isinstance(dataset_args['kpt_path'], str)
+        if 'split' in dataset_args.keys():
+            split = dataset_args['split']
+        else:
+            split = None
         dataset = ImageKptDataset(dataset_args['data_path'], dataset_args['kpt_path'],
-            img_loader, mask_loader, img_tf, kpt_tf)
+            img_loader, mask_loader, img_tf, kpt_tf, split)
         if phase == 'train':
             assert 'val_split' in dataset_args.keys()
             total_length = len(dataset)
@@ -176,9 +185,13 @@ def make_dataset(opt:dict):
             val_dataset_list = []
         else:
             dataset_list = []
-        for data_path, kpt_path in zip(dataset_args['data_path'], dataset_args['kpt_path']):
+        for i, (data_path, kpt_path) in enumerate(zip(dataset_args['data_path'], dataset_args['kpt_path'])):
+            if 'split' in dataset_args.keys():
+                split = dataset_args['split'][i]
+            else:
+                split = None
             dataset = ImageKptDataset(data_path, kpt_path,
-                img_loader, mask_loader, img_tf, kpt_tf)
+                img_loader, mask_loader, img_tf, kpt_tf, split)
             if phase == 'train':
                 total_length = len(dataset)
                 val_length = int(total_length * dataset_args['val_split'])

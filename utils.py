@@ -65,11 +65,11 @@ def plot_marker_center(img:np.ndarray, centers:np.ndarray):
         cv2.circle(out, (int(pt[0]), int(pt[1])), 3, (0, 255, 0), thickness=-1)
     return out
 
-def plot_marker_displacement(img:np.ndarray, st_points:np.ndarray, end_points:np.ndarray):
+def plot_marker_displacement(img:np.ndarray, st_points:np.ndarray, end_points:np.ndarray, pt_color=(0,255,0), arrow_corlor=(255,0,0)):
     out_img = np.copy(img)
     for st_pt, end_pt in zip(st_points, end_points):
-        cv2.circle(out_img, (int(st_pt[0]), int(st_pt[1])), 3, (0, 255, 0), thickness=-1)
-        cv2.arrowedLine(out_img, (int(st_pt[0]), int(st_pt[1])), (int(end_pt[0]), int(end_pt[1])), (0,0,255), thickness=1, line_type=cv2.LINE_AA, tipLength=1)
+        cv2.circle(out_img, (int(st_pt[0]), int(st_pt[1])), 3, pt_color, thickness=-1)
+        cv2.arrowedLine(out_img, (int(st_pt[0]), int(st_pt[1])), (int(end_pt[0]), int(end_pt[1])), arrow_corlor, thickness=1, line_type=cv2.LINE_AA, tipLength=1)
     return out_img
 
 def plot_marker_displacement2(img:np.ndarray, mask:np.ndarray, shift:np.ndarray):
