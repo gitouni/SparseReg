@@ -8,7 +8,7 @@ from tqdm import tqdm
 def options():
     parser = argparse.ArgumentParser()
     io_parser = parser.add_argument_group()
-    io_parser.add_argument("--input_file",type=str,default="ex_data/ref_marker.png")
+    io_parser.add_argument("--input_file",type=str,default="ex_data/ref_markered.png")
     io_parser.add_argument("--output_file",type=str,default="ex_data/ref_marker.png")
     marker_parser = parser.add_argument_group()
     marker_parser.add_argument("--morphop_size",type=int,default=5)
@@ -16,9 +16,9 @@ def options():
     marker_parser.add_argument("--morphclose_size",type=int,default=5)
     marker_parser.add_argument("--morphclose_iter",type=int,default=1)
     marker_parser.add_argument("--dilate_size",type=int,default=3)
-    marker_parser.add_argument("--dilate_iter",type=int,default=0)
+    marker_parser.add_argument("--dilate_iter",type=int,default=1)
     marker_parser.add_argument("--marker_range",type=int,nargs=2,default=[145,255])
-    marker_parser.add_argument("--value_threshold",type=int,default=90)
+    marker_parser.add_argument("--value_threshold",type=int,default=110)
     return parser.parse_args()
 
 if __name__ == "__main__":

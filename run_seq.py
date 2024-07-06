@@ -13,8 +13,8 @@ from torch.optim.lr_scheduler import ExponentialLR
 # from torchvision import datasets
 # from torch.autograd import Variable
 
-from models.base import get_deeplabv3
-from datasets import make_dataset, tensor2img
+from models.base import GRUDeepLabV3
+from datasets import make_seq_dataloader, tensor2img
 from utils.utils import plot_marker_displacement2, refresh_dir
 # import torch.nn as nn
 # import torch.nn.functional as F
@@ -44,7 +44,9 @@ opt = parser.parse_args()
 config = yaml.load(open(opt.config,'r'), yaml.SafeLoader)
 phase = config['phase']
 dataset_args = config['dataset']
+model_args = config['model']
 dataset_name = config['name']
+clip_gradient = config['experiment']['clip_gradient']
 if phase == 'train':
     img_save_path = "images/%s" % dataset_name
 model_save_path = "saved_models/%s" % dataset_name
@@ -58,28 +60,38 @@ else:
 
 # Loss functions
 criterion = torch.nn.MSELoss(reduction='sum').to(device)
-model = get_deeplabv3(2).to(device)
+model = GRUDeepLabV3(**model_args).to(device)
 
 # Optimizers
 optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2), weight_decay=opt.weight_decay)
-scheduler = ExponentialLR(optimizer, gamma=0.98)
+scheduler = ExponentialLR(optimizer, gamma=config['experiment']['exp_gamma'])
 
-@torch.no_grad()
+@torch.inference_mode()
 def val_epoch(dataloader:DataLoader, save_interval:int, gt_save_path:str, pred_save_path:str, scale:float):
     save_cnt = 0
     model.eval()
     avg_loss = 0
     tmeter = trange(len(dataloader), desc='inference')
     with tmeter:
-        for i,(img, mask, gt_shift) in enumerate(dataloader):
-            img:torch.Tensor = img.to(device)
-            mask:torch.Tensor = mask.to(device)
-            gt_shift:torch.Tensor = gt_shift.to(device)
-            pred_shift:torch.Tensor = model(img)['out']
-            val_loss = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
-            tmeter.set_postfix({"val_loss":val_loss.item()})
-            avg_loss += val_loss.item()
-            if i % save_interval == 0:
+        for i,(seq_img, seq_mask, seq_gt_shift) in enumerate(dataloader):
+            # Model inputs
+            seq_img:torch.Tensor = img.to(device)  # (B, K, 3, H, W)
+            seq_mask:torch.Tensor = mask.to(device)  # (B, K, 1, H, W)
+            seq_gt_shift:torch.Tensor = gt_shift.to(device)  # (B, K, 1, H, W)
+            Nseq = img.shape[1]
+            total_loss = 0
+            # RNN training
+            for i in range(Nseq):
+                model.reset_state()
+                img = seq_img[:,i,...]
+                mask = seq_mask[:,i,...]
+                gt_shift = seq_gt_shift[:,i,...]
+                pred_shift:torch.Tensor = model(img)
+                loss:torch.Tensor = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
+                total_loss += loss
+            total_loss /= Nseq
+            avg_loss += total_loss.item()
+            if i % save_interval == 0:  # draw the marker motion prediction on the last image
                 img_np = tensor2img(img)
                 mask_np = mask.squeeze().cpu().detach().numpy()
                 pred_shift_np = pred_shift.squeeze(0).permute(1, 2, 0).cpu().detach().numpy() * scale
@@ -92,22 +104,32 @@ def val_epoch(dataloader:DataLoader, save_interval:int, gt_save_path:str, pred_s
             tmeter.update(1)
     return avg_loss / (i+1)
 
-@torch.no_grad()
+@torch.inference_mode()
 def test_epoch(dataloader:DataLoader, save_interval:int, gt_save_path:str, pred_save_path:str, pred_shift_save_path:str, scale:float):
     save_cnt = 0
     model.eval()
     avg_loss = 0
     tmeter = trange(len(dataloader), desc='inference')
     with tmeter:
-        for i,(img, mask, gt_shift) in enumerate(dataloader):
-            img:torch.Tensor = img.to(device)
-            mask:torch.Tensor = mask.to(device)
-            gt_shift:torch.Tensor = gt_shift.to(device)
-            pred_shift:torch.Tensor = model(img)['out']
-            val_loss = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
-            tmeter.set_postfix({"val_loss":val_loss.item()})
-            avg_loss += val_loss.item()
-            if i % save_interval == 0:
+        for i,(seq_img, seq_mask, seq_gt_shift) in enumerate(dataloader):
+            # Model inputs
+            seq_img:torch.Tensor = img.to(device)  # (B, K, 3, H, W)
+            seq_mask:torch.Tensor = mask.to(device)  # (B, K, 1, H, W)
+            seq_gt_shift:torch.Tensor = gt_shift.to(device)  # (B, K, 1, H, W)
+            Nseq = img.shape[1]
+            total_loss = 0
+            # RNN training
+            for i in range(Nseq):
+                model.reset_state()
+                img = seq_img[:,i,...]
+                mask = seq_mask[:,i,...]
+                gt_shift = seq_gt_shift[:,i,...]
+                pred_shift:torch.Tensor = model(img)
+                loss:torch.Tensor = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
+                total_loss += loss
+            total_loss /= Nseq
+            avg_loss += total_loss.item()
+            if i % save_interval == 0:  # draw the marker motion prediction on the last image
                 img_np = tensor2img(img)
                 mask_np = mask.squeeze().cpu().detach().numpy()  # H, W
                 pred_shift_np = pred_shift.squeeze(0).permute(1, 2, 0).cpu().detach().numpy() * scale  # H, W, 2
@@ -123,6 +145,54 @@ def test_epoch(dataloader:DataLoader, save_interval:int, gt_save_path:str, pred_
             tmeter.update(1)
     return avg_loss / (i+1)
 
+def train_epoch(train_dataloader:DataLoader, epoch:int):
+    for i,(seq_img, seq_mask, seq_gt_shift) in enumerate(train_dataloader):
+        optimizer.zero_grad()
+        # Model inputs
+        seq_img:torch.Tensor = img.to(device)  # (B, K, 3, H, W)
+        seq_mask:torch.Tensor = mask.to(device)  # (B, K, 1, H, W)
+        seq_gt_shift:torch.Tensor = gt_shift.to(device)  # (B, K, 1, H, W)
+        Nseq = img.shape[1]
+        total_loss = 0
+        # RNN training
+        for i in range(Nseq):
+            model.reset_state()
+            img = seq_img[:,i,...]
+            mask = seq_mask[:,i,...]
+            gt_shift = seq_gt_shift[:,i,...]
+            pred_shift:torch.Tensor = model(img)
+            loss:torch.Tensor = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
+            total_loss += loss
+        total_loss.backward()
+        torch.nn.utils.clip_grad_value_(model.parameters(), clip_value=clip_gradient)
+        optimizer.step()
+
+        # --------------
+        #  Log Progress
+        # --------------
+
+        # Determine approximate time left
+        batches_done = epoch * len(train_dataloader) + i
+        batches_left = opt.n_epochs * len(train_dataloader) - batches_done
+        time_left = datetime.timedelta(seconds=batches_left * (time.time() - prev_time))
+        prev_time = time.time()
+
+        # Print log
+        sys.stdout.write(
+            "\r[Epoch %d/%d] [Batch %d/%d] [mse loss: %f] [lr: %f] ETA: %s"
+            % (
+                epoch,
+                opt.n_epochs,
+                i,
+                len(train_dataloader),
+                loss.item(),
+                optimizer.param_groups[0]['lr'],
+                time_left,
+            )
+        )
+
+        
+
 # Configure dataloaders
 if phase == 'train':
     if opt.epoch != 0:
@@ -133,69 +203,11 @@ if phase == 'train':
     else:
         refresh_dir(img_save_path)
         refresh_dir(model_save_path)
-    train_dataset, val_dataset = make_dataset(config)
-
-    dataloader = DataLoader(
-        train_dataset,
-        batch_size=opt.batch_size,
-        shuffle=True,
-        num_workers=opt.n_cpu,
-        drop_last=True
-    )
-
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=opt.n_cpu,
-        drop_last=False
-    )
-
-    
-
-    # ----------
-    #  Training
-    # ----------
-
+    train_dataloader, val_dataloader = make_seq_dataloader(config)
     prev_time = time.time()
-
+    model.train()
     for epoch in range(opt.epoch, opt.n_epochs):
-        for i,(img, mask, gt_shift) in enumerate(dataloader):
-            optimizer.zero_grad()
-            # Model inputs
-            img:torch.Tensor = img.to(device)
-            mask:torch.Tensor = mask.to(device)
-            gt_shift:torch.Tensor = gt_shift.to(device)
-            pred_shift:torch.Tensor = model(img)['out']
-            loss = criterion(pred_shift*mask, gt_shift*mask) / mask.sum()
-            loss.backward()
-
-            optimizer.step()
-
-            # --------------
-            #  Log Progress
-            # --------------
-
-            # Determine approximate time left
-            batches_done = epoch * len(dataloader) + i
-            batches_left = opt.n_epochs * len(dataloader) - batches_done
-            time_left = datetime.timedelta(seconds=batches_left * (time.time() - prev_time))
-            prev_time = time.time()
-
-            # Print log
-            sys.stdout.write(
-                "\r[Epoch %d/%d] [Batch %d/%d] [mse loss: %f] [lr: %f] ETA: %s"
-                % (
-                    epoch,
-                    opt.n_epochs,
-                    i,
-                    len(dataloader),
-                    loss.item(),
-                    optimizer.param_groups[0]['lr'],
-                    time_left,
-                )
-            )
-
+        train_epoch(train_dataloader, epoch)
         if (opt.checkpoint_interval != -1 and (epoch+1) % opt.checkpoint_interval == 0) or epoch == opt.n_epochs - 1:
             # Save model checkpoints
             torch.save(model.state_dict(), "saved_models/%s/model_%d.pth" % (dataset_name, epoch+1))
@@ -206,18 +218,9 @@ if phase == 'train':
             val_pixel_loss = val_epoch(val_dataloader, opt.save_interval, gt_img_save_path, pred_img_save_path, dataset_args['scale'])
             print("Epoch [%03d] val_loss: %.4f"%(epoch+1, val_pixel_loss))
             model.train()
-        # with warmup_lr.dampening():
-        #     scheduler.step()
 
 else:
-    test_dataset = make_dataset(config)
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=opt.n_cpu,
-        drop_last=False
-    )
+    test_dataloader = make_seq_dataloader(config)
     model.load_state_dict(torch.load(opt.resume, map_location='cpu'))
     img_save_path = "%s/%s" % (config['output_dir'], dataset_name)
     refresh_dir(img_save_path)
